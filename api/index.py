@@ -33,12 +33,12 @@ def create_notion_task(task_text, tag, image_url=None):
         "Notion-Version": NOTION_VERSION
     }
     
-    # Створюємо задачу у Вашій основній базі зі статусом "Спільне"
+    # Створюємо задачу у Вашій основній базі зі статусом "Вхідні"
     data = {
         "parent": {"database_id": NOTION_DATABASE_ID},
         "properties": {
             "Name": {"title": [{"text": {"content": task_text}}]},
-            "Status": {"status": {"name": "Спільне"}}, # Жорстко задаємо статус для зовнішніх задач
+            "Status": {"status": {"name": "Вхідні"}}, # Жорстко задаємо статус для зовнішніх задач
             "Priority": {"select": {"name": "⚡ Середній"}}, # Автоматичний пріоритет
             "Tags": {"multi_select": [{"name": tag}]}
         }
