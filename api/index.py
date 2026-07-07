@@ -88,49 +88,44 @@ def handle_text(message):
     
 @bot.message_handler(content_types=['voice'])
 def handle_voice(message):
-    msg = bot.send_message(message.chat.id, "🎧 Розпізнаю голос...")
-    
-    # Використовуємо системний ffmpeg, без спроб щось докачувати
+    import os
+    import tempfile
     from pydub import AudioSegment
     import speech_recognition as sr
-    import os
     
-    # Кажемо pydub використовувати системний ffmpeg
+    # Це "старий добрий" спосіб: ми не намагаємось нічого завантажувати, 
+    # ми просто кажемо pydub використовувати ffmpeg, який вже є в системі.
     AudioSegment.converter = "ffmpeg"
+    
+    msg = bot.send_message(message.chat.id, "🎧 Розпізнаю голос...")
     
     try:
         file_info = bot.get_file(message.voice.file_id)
         downloaded_file = bot.download_file(file_info.file_path)
         
-        # Працюємо тільки в папці /tmp (там дозволено запис)
-        ogg_path = f"/tmp/{message.voice.file_id}.ogg"
-        wav_path = f"/tmp/{message.voice.file_id}.wav"
-        
-        with open(ogg_path, "wb") as f:
-            f.write(downloaded_file)
+        # Використовуємо /tmp для роботи, бо це єдине місце, куди Vercel дозволяє писати
+        with tempfile.NamedTemporaryFile(dir='/tmp', suffix='.ogg', delete=False) as ogg_file:
+            ogg_file.write(downloaded_file)
+            ogg_file.flush()
             
-        # Конвертуємо
-        audio = AudioSegment.from_ogg(ogg_path)
-        audio.export(wav_path, format="wav")
-        
-        # Розпізнаємо
-        recognizer = sr.Recognizer()
-        with sr.AudioFile(wav_path) as source:
-            audio_data = recognizer.record(source)
-            text = recognizer.recognize_google(audio_data, language="uk-UA")
-        
-        # Видаляємо тимчасові файли
-        if os.path.exists(ogg_path): os.remove(ogg_path)
-        if os.path.exists(wav_path): os.remove(wav_path)
+            with tempfile.NamedTemporaryFile(dir='/tmp', suffix='.wav', delete=False) as wav_file:
+                # Конвертація через pydub (використовує системний ffmpeg)
+                audio = AudioSegment.from_ogg(ogg_file.name)
+                audio.export(wav_file.name, format="wav")
+                
+                # Розпізнавання
+                recognizer = sr.Recognizer()
+                with sr.AudioFile(wav_file.name) as source:
+                    audio_data = recognizer.record(source)
+                    text = recognizer.recognize_google(audio_data, language="uk-UA")
         
         bot.delete_message(message.chat.id, msg.message_id)
         process_task_text(message.chat.id, message.from_user.id, text)
         
     except Exception as e:
-        # Якщо впало тут, значить на сервері Vercel немає встановленого ffmpeg
-        error_text = str(e)
-        bot.edit_message_text(f"❌ Помилка: {error_text}", chat_id=message.chat.id, message_id=msg.message_id)
-        logging.error(f"Voice error: {error_text}")
+        # Якщо тут виникає помилка "ffmpeg not found", значить середовище Vercel 
+        # оновилося і прибрало системний ffmpeg. Але спробувати варто!
+        bot.edit_message_text(f"❌ Помилка: {str(e)}", chat_id=message.chat.id, message_id=msg.message_id)
 
 @bot.message_handler(content_types=['photo'])
 def handle_photo(message):
