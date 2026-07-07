@@ -1,6 +1,5 @@
 pyTelegramBotAPI
 requests
 flask
-pydub
 speechrecognition
 imageio-ffmpeg
