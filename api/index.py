@@ -1,5 +1,5 @@
 import os
-import tempfile # <--- ЦЕ ВИПРАВИТЬ NameError
+import tempfile
 import logging
 import requests
 from flask import Flask, request, jsonify
@@ -88,31 +88,32 @@ def handle_text(message):
     
 @bot.message_handler(content_types=['voice'])
 def handle_voice(message):
-    msg = bot.send_message(message.chat.id, "🎧 Розпізнаю голос...")
-    
-    # Використовуємо лише системний ffmpeg, без ніяких "додаткових" бібліотек
-    from pydub import AudioSegment
-    import speech_recognition as sr
-    import os
-    
-    AudioSegment.converter = "ffmpeg"
+    msg = bot.send_message(message.chat.id, "🎧 Розпізнаю голос (локально)...")
     
     try:
+        # Використовуємо imageio_ffmpeg, який НЕ створює файлів-замків
+        import imageio_ffmpeg
+        from pydub import AudioSegment
+        import speech_recognition as sr
+        
+        # Передаємо pydub шлях до безпечного локального ffmpeg
+        AudioSegment.converter = imageio_ffmpeg.get_ffmpeg_exe()
+        
         file_info = bot.get_file(message.voice.file_id)
         downloaded_file = bot.download_file(file_info.file_path)
         
-        # Працюємо тільки в /tmp
+        # Працюємо тільки в /tmp (там Vercel дозволяє запис)
         ogg_path = f"/tmp/{message.voice.file_id}.ogg"
         wav_path = f"/tmp/{message.voice.file_id}.wav"
         
         with open(ogg_path, "wb") as f:
             f.write(downloaded_file)
             
-        # Конвертуємо (pydub звернеться до системного ffmpeg)
+        # Конвертуємо
         audio = AudioSegment.from_ogg(ogg_path)
-        # Параметр -ar 16000 знижує вимоги до ffprobe/ffmpeg
         audio.export(wav_path, format="wav")
         
+        # Розпізнаємо стандартним методом
         recognizer = sr.Recognizer()
         with sr.AudioFile(wav_path) as source:
             audio_data = recognizer.record(source)
@@ -126,7 +127,7 @@ def handle_voice(message):
         process_task_text(message.chat.id, message.from_user.id, text)
         
     except Exception as e:
-        bot.edit_message_text(f"❌ Помилка: {str(e)}", chat_id=message.chat.id, message_id=msg.message_id)
+        bot.edit_message_text(f"❌ Локальна помилка: {str(e)}", chat_id=message.chat.id, message_id=msg.message_id)
 
 @bot.message_handler(content_types=['photo'])
 def handle_photo(message):
@@ -154,19 +155,16 @@ def button_callback(call):
     if data == "save_task":
         if not task_data['tag']: return bot.answer_callback_query(call.id, "⚠️ Оберіть категорію!", show_alert=True)
         
-        # Формуємо ім'я відправника
         sender_full_name = f"{call.from_user.first_name} {call.from_user.last_name or ''}".strip()
             
         bot.edit_message_text("⏳ Відправляю...", chat_id=call.message.chat.id, message_id=call.message.message_id)
         
-        # Передаємо sender_full_name у функцію
         success, error_msg = create_notion_task(task_data["text"], task_data["tag"], sender_full_name, task_data.get("image_url"))
         
         if success:
             del user_pending_tasks[user_id]
             bot.edit_message_text(f"✅ Задачу відправлено Андрію!", chat_id=call.message.chat.id, message_id=call.message.message_id)
             
-            # Сповіщення через основний бот
             text = f"🔔 <b>Нова задача!</b>\n\n👤 Від: {sender_full_name}\n📝: {task_data['text']}\n🏷️: {task_data['tag']}"
             main_bot.send_message(YOUR_TELEGRAM_CHAT_ID, text, parse_mode="HTML")
         else:
