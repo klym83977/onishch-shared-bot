@@ -88,40 +88,49 @@ def handle_text(message):
     
 @bot.message_handler(content_types=['voice'])
 def handle_voice(message):
-    import os
-    os.environ["STATIC_FFMPEG_CACHE"] = "/tmp/static-ffmpeg"
-    if not os.path.exists("/tmp/static-ffmpeg"): os.makedirs("/tmp/static-ffmpeg")
-    
     msg = bot.send_message(message.chat.id, "🎧 Розпізнаю голос...")
+    
+    # Використовуємо системний ffmpeg, без спроб щось докачувати
+    from pydub import AudioSegment
+    import speech_recognition as sr
+    import os
+    
+    # Кажемо pydub використовувати системний ffmpeg
+    AudioSegment.converter = "ffmpeg"
+    
     try:
-        from static_ffmpeg import run
-        from pydub import AudioSegment
-        import speech_recognition as sr
-        
-        AudioSegment.converter = "ffmpeg"
-        
         file_info = bot.get_file(message.voice.file_id)
         downloaded_file = bot.download_file(file_info.file_path)
         
-        with tempfile.NamedTemporaryFile(dir='/tmp', suffix='.ogg', delete=False) as ogg_file:
-            ogg_file.write(downloaded_file)
-            ogg_file.flush()
-            with tempfile.NamedTemporaryFile(dir='/tmp', suffix='.wav', delete=False) as wav_file:
-                audio = AudioSegment.from_ogg(ogg_file.name)
-                audio.export(wav_file.name, format="wav")
-                recognizer = sr.Recognizer()
-                with sr.AudioFile(wav_file.name) as source:
-                    audio_data = recognizer.record(source)
-                    text = recognizer.recognize_google(audio_data, language="uk-UA")
+        # Працюємо тільки в папці /tmp (там дозволено запис)
+        ogg_path = f"/tmp/{message.voice.file_id}.ogg"
+        wav_path = f"/tmp/{message.voice.file_id}.wav"
+        
+        with open(ogg_path, "wb") as f:
+            f.write(downloaded_file)
+            
+        # Конвертуємо
+        audio = AudioSegment.from_ogg(ogg_path)
+        audio.export(wav_path, format="wav")
+        
+        # Розпізнаємо
+        recognizer = sr.Recognizer()
+        with sr.AudioFile(wav_path) as source:
+            audio_data = recognizer.record(source)
+            text = recognizer.recognize_google(audio_data, language="uk-UA")
+        
+        # Видаляємо тимчасові файли
+        if os.path.exists(ogg_path): os.remove(ogg_path)
+        if os.path.exists(wav_path): os.remove(wav_path)
         
         bot.delete_message(message.chat.id, msg.message_id)
         process_task_text(message.chat.id, message.from_user.id, text)
+        
     except Exception as e:
-        import traceback
-        error_full = traceback.format_exc()
-        logging.error(error_full)
-        # Надсилаємо коротку помилку в телеграм
-        bot.edit_message_text(f"❌ Помилка: {type(e).__name__}\n{str(e)[:100]}", chat_id=message.chat.id, message_id=msg.message_id)
+        # Якщо впало тут, значить на сервері Vercel немає встановленого ffmpeg
+        error_text = str(e)
+        bot.edit_message_text(f"❌ Помилка: {error_text}", chat_id=message.chat.id, message_id=msg.message_id)
+        logging.error(f"Voice error: {error_text}")
 
 @bot.message_handler(content_types=['photo'])
 def handle_photo(message):
