@@ -1,6 +1,7 @@
 import os
 import tempfile
 import logging
+import subprocess
 import requests
 from flask import Flask, request, jsonify
 import telebot
@@ -19,7 +20,6 @@ YOUR_TELEGRAM_CHAT_ID = os.environ.get("YOUR_TELEGRAM_CHAT_ID")
 IMGBB_API_KEY = "a6f01e2115287b5dbd7a28cc37e957d1"
 NOTION_VERSION = "2022-06-28"
 
-# Перевірка наявності токенів
 if not TELEGRAM_TOKEN or not MAIN_BOT_TOKEN:
     logging.error("ПОМИЛКА: Не встановлено TELEGRAM_TOKEN або MAIN_BOT_TOKEN у Vercel!")
     raise ValueError("Missing Telegram Tokens in Environment Variables")
@@ -91,27 +91,23 @@ def handle_voice(message):
     msg = bot.send_message(message.chat.id, "🎧 Розпізнаю голос (локально)...")
     
     try:
-        # Використовуємо imageio_ffmpeg, який НЕ створює файлів-замків
         import imageio_ffmpeg
-        from pydub import AudioSegment
         import speech_recognition as sr
-        
-        # Передаємо pydub шлях до безпечного локального ffmpeg
-        AudioSegment.converter = imageio_ffmpeg.get_ffmpeg_exe()
         
         file_info = bot.get_file(message.voice.file_id)
         downloaded_file = bot.download_file(file_info.file_path)
         
-        # Працюємо тільки в /tmp (там Vercel дозволяє запис)
         ogg_path = f"/tmp/{message.voice.file_id}.ogg"
         wav_path = f"/tmp/{message.voice.file_id}.wav"
         
         with open(ogg_path, "wb") as f:
             f.write(downloaded_file)
             
-        # Конвертуємо
-        audio = AudioSegment.from_ogg(ogg_path)
-        audio.export(wav_path, format="wav")
+        # БЕРЕМО ЛОКАЛЬНИЙ FFMPEG
+        ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+        
+        # ПРЯМА КОНВЕРТАЦІЯ БЕЗ PYDUB ТА FFPROBE
+        subprocess.run([ffmpeg_exe, "-y", "-i", ogg_path, wav_path], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         
         # Розпізнаємо стандартним методом
         recognizer = sr.Recognizer()
@@ -119,7 +115,7 @@ def handle_voice(message):
             audio_data = recognizer.record(source)
             text = recognizer.recognize_google(audio_data, language="uk-UA")
         
-        # Прибираємо за собою
+        # Прибираємо файли
         if os.path.exists(ogg_path): os.remove(ogg_path)
         if os.path.exists(wav_path): os.remove(wav_path)
         
@@ -143,7 +139,7 @@ def handle_photo(message):
     except Exception as e:
         bot.edit_message_text(f"❌ Помилка: {e}", chat_id=message.chat.id, message_id=msg.message_id)
 
-@bot.callback_query_handler(func=lambda call: True)
+@bot.callback_query_handler(func=lambda True: True)
 def button_callback(call):
     user_id = call.from_user.id
     data = call.data
