@@ -1,1 +1,0 @@
-# onishch-shared-bot
