@@ -117,7 +117,11 @@ def handle_voice(message):
         bot.delete_message(message.chat.id, msg.message_id)
         process_task_text(message.chat.id, message.from_user.id, text)
     except Exception as e:
-        bot.edit_message_text(f"❌ Помилка голосу: {e}", chat_id=message.chat.id, message_id=msg.message_id)
+        import traceback
+        error_full = traceback.format_exc()
+        logging.error(error_full)
+        # Надсилаємо коротку помилку в телеграм
+        bot.edit_message_text(f"❌ Помилка: {type(e).__name__}\n{str(e)[:100]}", chat_id=message.chat.id, message_id=msg.message_id)
 
 @bot.message_handler(content_types=['photo'])
 def handle_photo(message):
