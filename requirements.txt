@@ -3,7 +3,5 @@ pyTelegramBotAPI
 requests
 dateparser
 SpeechRecognition
-flask
 pydub
 static-ffmpeg
-speechrecognition
