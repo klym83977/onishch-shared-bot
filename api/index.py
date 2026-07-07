@@ -1,4 +1,5 @@
 import os
+import tempfile # <--- ЦЕ ВИПРАВИТЬ NameError
 import logging
 import requests
 from flask import Flask, request, jsonify
