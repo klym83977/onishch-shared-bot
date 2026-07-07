@@ -84,6 +84,40 @@ def process_task_text(chat_id, user_id, task_text, image_url=None):
 @bot.message_handler(content_types=['text'])
 def handle_text(message):
     process_task_text(message.chat.id, message.from_user.id, message.text)
+    
+@bot.message_handler(content_types=['voice'])
+def handle_voice(message):
+    import os
+    os.environ["STATIC_FFMPEG_CACHE"] = "/tmp/static-ffmpeg"
+    if not os.path.exists("/tmp/static-ffmpeg"): os.makedirs("/tmp/static-ffmpeg")
+    
+    msg = bot.send_message(message.chat.id, "🎧 Розпізнаю голос...")
+    try:
+        from static_ffmpeg import run
+        from pydub import AudioSegment
+        import speech_recognition as sr
+        
+        ffmpeg_exe, _ = run.get_or_fetch_platform_executables_else_raise()
+        AudioSegment.converter = ffmpeg_exe
+        
+        file_info = bot.get_file(message.voice.file_id)
+        downloaded_file = bot.download_file(file_info.file_path)
+        
+        with tempfile.NamedTemporaryFile(dir='/tmp', suffix='.ogg', delete=False) as ogg_file:
+            ogg_file.write(downloaded_file)
+            ogg_file.flush()
+            with tempfile.NamedTemporaryFile(dir='/tmp', suffix='.wav', delete=False) as wav_file:
+                audio = AudioSegment.from_ogg(ogg_file.name)
+                audio.export(wav_file.name, format="wav")
+                recognizer = sr.Recognizer()
+                with sr.AudioFile(wav_file.name) as source:
+                    audio_data = recognizer.record(source)
+                    text = recognizer.recognize_google(audio_data, language="uk-UA")
+        
+        bot.delete_message(message.chat.id, msg.message_id)
+        process_task_text(message.chat.id, message.from_user.id, text)
+    except Exception as e:
+        bot.edit_message_text(f"❌ Помилка голосу: {e}", chat_id=message.chat.id, message_id=msg.message_id)
 
 @bot.message_handler(content_types=['photo'])
 def handle_photo(message):
