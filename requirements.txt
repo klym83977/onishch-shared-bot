@@ -4,4 +4,3 @@ requests
 dateparser
 SpeechRecognition
 pydub
-static-ffmpeg
