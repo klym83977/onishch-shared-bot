@@ -97,8 +97,7 @@ def handle_voice(message):
         from pydub import AudioSegment
         import speech_recognition as sr
         
-        ffmpeg_exe, _ = run.get_or_fetch_platform_executables_else_raise()
-        AudioSegment.converter = ffmpeg_exe
+        AudioSegment.converter = "ffmpeg"
         
         file_info = bot.get_file(message.voice.file_id)
         downloaded_file = bot.download_file(file_info.file_path)
