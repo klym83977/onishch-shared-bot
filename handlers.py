@@ -1,6 +1,11 @@
+import os
+import subprocess
 import requests
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+import speech_recognition as sr
+import imageio_ffmpeg
+
 from config import TELEGRAM_TOKEN, MAIN_BOT_TOKEN, IMGBB_API_KEY, YOUR_TELEGRAM_CHAT_ID
 from notion import create_notion_task
 
@@ -25,7 +30,7 @@ def generate_markup(task_data):
 
 @bot.message_handler(commands=['start'])
 def start_command(message):
-    bot.send_message(message.chat.id, "Привіт! Я — спільний асистент Андрія. Напишіть задачу, і я миттєво передам її йому.")
+    bot.send_message(message.chat.id, "Привіт! Я — спільний асистент Андрія. Напишіть задачу, відправте голосове або фото, і я миттєво передам її йому.")
 
 def process_task_text(chat_id, user_id, task_text, image_url=None):
     user_pending_tasks[user_id] = {"text": task_text, "tag": None, "image_url": image_url}
@@ -39,6 +44,40 @@ def process_task_text(chat_id, user_id, task_text, image_url=None):
 @bot.message_handler(content_types=['text'])
 def handle_text(message):
     process_task_text(message.chat.id, message.from_user.id, message.text)
+
+@bot.message_handler(content_types=['voice'])
+def handle_voice(message):
+    msg = bot.send_message(message.chat.id, "🎧 Розпізнаю голос (локально)...")
+    try:
+        file_info = bot.get_file(message.voice.file_id)
+        downloaded_file = bot.download_file(file_info.file_path)
+        
+        ogg_path = f"/tmp/{message.voice.file_id}.ogg"
+        wav_path = f"/tmp/{message.voice.file_id}.wav"
+        
+        with open(ogg_path, "wb") as f:
+            f.write(downloaded_file)
+            
+        ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+        subprocess.run([ffmpeg_exe, "-y", "-i", ogg_path, wav_path], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        
+        recognizer = sr.Recognizer()
+        with sr.AudioFile(wav_path) as source:
+            audio_data = recognizer.record(source)
+            text = recognizer.recognize_google(audio_data, language="uk-UA")
+            
+        if os.path.exists(ogg_path): os.remove(ogg_path)
+        if os.path.exists(wav_path): os.remove(wav_path)
+        
+        bot.delete_message(message.chat.id, msg.message_id)
+        process_task_text(message.chat.id, message.from_user.id, text)
+        
+    except sr.UnknownValueError:
+        bot.edit_message_text("❌ Не вдалося розпізнати слова. Можливо, запис занадто тихий або нечіткий.", chat_id=message.chat.id, message_id=msg.message_id)
+    except sr.RequestError as e:
+        bot.edit_message_text(f"❌ Помилка сервісу Google: {e}", chat_id=message.chat.id, message_id=msg.message_id)
+    except Exception as e:
+        bot.edit_message_text(f"❌ Системна помилка: {repr(e)}", chat_id=message.chat.id, message_id=msg.message_id)
 
 @bot.message_handler(content_types=['photo'])
 def handle_photo(message):
